@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+
+.kb/
+.venv/
+answers/
+__pycache__/
+*.py[cod]
