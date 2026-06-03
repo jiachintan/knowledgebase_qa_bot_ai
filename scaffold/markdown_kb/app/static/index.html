@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Knowledge Base Q&A</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px;
+    }
+
+    header {
+      width: 100%;
+      max-width: 720px;
+      margin-bottom: 24px;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #111;
+    }
+
+    header p {
+      font-size: 0.85rem;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .toolbar button {
+      font-size: 0.8rem;
+      padding: 5px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .toolbar button:hover { background: #f0f0f0; }
+
+    #index-status {
+      font-size: 0.8rem;
+      color: #666;
+      align-self: center;
+    }
+
+    .chat-area {
+      width: 100%;
+      max-width: 720px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      max-width: 90%;
+    }
+
+    .bubble.user {
+      background: #1a1a1a;
+      color: #fff;
+      align-self: flex-end;
+      border-bottom-right-radius: 3px;
+    }
+
+    .bubble.assistant {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      align-self: flex-start;
+      border-bottom-left-radius: 3px;
+      white-space: pre-wrap;
+    }
+
+    .sources-block {
+      align-self: flex-start;
+      max-width: 90%;
+    }
+
+    .sources-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #888;
+      margin-bottom: 6px;
+    }
+
+    .source-chip {
+      display: inline-block;
+      background: #eef2ff;
+      color: #4338ca;
+      border: 1px solid #c7d2fe;
+      border-radius: 5px;
+      padding: 3px 8px;
+      font-size: 0.75rem;
+      font-family: monospace;
+      margin: 2px 4px 2px 0;
+      cursor: default;
+    }
+
+    .source-chip:hover { background: #e0e7ff; }
+
+    .source-chip .score {
+      color: #818cf8;
+      margin-left: 4px;
+    }
+
+    .input-row {
+      position: sticky;
+      bottom: 0;
+      width: 100%;
+      max-width: 720px;
+      background: #f5f5f5;
+      padding: 16px 0 8px;
+      display: flex;
+      gap: 8px;
+    }
+
+    #query-input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      outline: none;
+      background: #fff;
+      transition: border-color 0.15s;
+    }
+
+    #query-input:focus { border-color: #4338ca; }
+
+    #send-btn {
+      padding: 10px 20px;
+      background: #1a1a1a;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #send-btn:hover { background: #333; }
+    #send-btn:disabled { background: #999; cursor: not-allowed; }
+
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 12px 16px;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+      border-bottom-left-radius: 3px;
+      align-self: flex-start;
+    }
+
+    .dot {
+      width: 7px; height: 7px;
+      background: #bbb;
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Knowledge Base Q&A</h1>
+  <p>Ask questions grounded in the indexed documents.</p>
+  <div class="toolbar">
+    <button id="index-btn" onclick="buildIndex()">Build Index</button>
+    <span id="index-status"></span>
+  </div>
+</header>
+
+<div class="chat-area" id="chat-area"></div>
+
+<div class="input-row">
+  <input id="query-input" type="text" placeholder="Ask a question..." onkeydown="if(event.key==='Enter') sendQuery()" />
+  <button id="send-btn" onclick="sendQuery()">Ask</button>
+</div>
+
+<script>
+  const chatArea = document.getElementById('chat-area');
+  const input = document.getElementById('query-input');
+  const sendBtn = document.getElementById('send-btn');
+  const indexStatus = document.getElementById('index-status');
+
+  async function buildIndex() {
+    indexStatus.textContent = 'Indexing...';
+    try {
+      const res = await fetch('/index', { method: 'POST' });
+      const data = await res.json();
+      indexStatus.textContent = `Indexed ${data.files_indexed} files, ${data.sections_indexed} sections`;
+    } catch (e) {
+      indexStatus.textContent = 'Index failed';
+    }
+  }
+
+  function appendMessage(role, text) {
+    const msg = document.createElement('div');
+    msg.className = 'message';
+    const bubble = document.createElement('div');
+    bubble.className = `bubble ${role}`;
+    bubble.textContent = text;
+    msg.appendChild(bubble);
+    chatArea.appendChild(msg);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    return bubble;
+  }
+
+  function appendSources(sources) {
+    if (!sources || sources.length === 0) return;
+    const block = document.createElement('div');
+    block.className = 'sources-block';
+    const label = document.createElement('div');
+    label.className = 'sources-label';
+    label.textContent = 'Sources';
+    block.appendChild(label);
+    sources.forEach(s => {
+      const chip = document.createElement('span');
+      chip.className = 'source-chip';
+      chip.title = s.content;
+      chip.innerHTML = `${s.source}<span class="score">${s.score}</span>`;
+      block.appendChild(chip);
+    });
+    chatArea.appendChild(block);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function showTyping() {
+    const el = document.createElement('div');
+    el.className = 'typing-indicator';
+    el.id = 'typing';
+    el.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+    chatArea.appendChild(el);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    return el;
+  }
+
+  async function sendQuery() {
+    const question = input.value.trim();
+    if (!question) return;
+
+    input.value = '';
+    sendBtn.disabled = true;
+    appendMessage('user', question);
+
+    const typing = showTyping();
+
+    try {
+      const res = await fetch('/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: question }),
+      });
+
+      typing.remove();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let answerBubble = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          const eventLine = lines.find(l => l.startsWith('event:'));
+          const dataLine = lines.find(l => l.startsWith('data:'));
+          if (!eventLine || !dataLine) continue;
+
+          const event = eventLine.slice(6).trim();
+          const data = JSON.parse(dataLine.slice(5).trim());
+
+          if (event === 'sources') {
+            appendSources(data);
+            const msg = document.createElement('div');
+            msg.className = 'message';
+            answerBubble = document.createElement('div');
+            answerBubble.className = 'bubble assistant';
+            msg.appendChild(answerBubble);
+            chatArea.appendChild(msg);
+          } else if (event === 'token' && answerBubble) {
+            answerBubble.textContent += data.text;
+            chatArea.scrollTop = chatArea.scrollHeight;
+          } else if (event === 'error') {
+            appendMessage('assistant', data.message);
+          }
+        }
+      }
+    } catch (e) {
+      typing.remove();
+      appendMessage('assistant', 'Error: could not reach the server.');
+    }
+
+    sendBtn.disabled = false;
+    input.focus();
+  }
+</script>
+</body>
+</html>

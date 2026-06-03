@@ -1,4 +1,6 @@
+import json
 import os
+from typing import Generator
 
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -9,7 +11,7 @@ from . import indexer
 SYSTEM_PROMPT = """You are a knowledge base Q&A assistant.
 Rules:
 1. Only answer using the provided CONTEXT.
-2. Cite sources using filename#heading.
+2. Cite every fact using [Source: filename#heading] immediately after the statement.
 3. If the CONTEXT does not contain the answer, say: "I cannot confirm from the knowledge base."
 4. Do not guess, invent policies, or use outside knowledge.
 """
@@ -79,3 +81,34 @@ def query(question: str) -> dict:
         "answer": response.content,
         "sources": sources,
     }
+
+
+def query_stream(question: str) -> Generator[str, None, None]:
+    if not indexer.sections:
+        yield f"event: error\ndata: {json.dumps({'message': 'Not indexed yet. Call POST /index first.'})}\n\n"
+        return
+
+    ranked_sections = indexer.search(question, k=3)
+    if not ranked_sections:
+        yield f"event: sources\ndata: {json.dumps([])}\n\n"
+        yield f"event: token\ndata: {json.dumps({'text': 'I cannot confirm from the knowledge base.'})}\n\n"
+        yield "event: done\ndata: {}\n\n"
+        return
+
+    sources = [
+        {
+            "source": section.id,
+            "heading": " > ".join(section.heading_path),
+            "score": round(score, 3),
+            "content": section.content[:240],
+        }
+        for section, score in ranked_sections
+    ]
+    yield f"event: sources\ndata: {json.dumps(sources)}\n\n"
+
+    prompt = build_prompt(question, ranked_sections)
+    for chunk in get_llm().stream([SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]):
+        if chunk.content:
+            yield f"event: token\ndata: {json.dumps({'text': chunk.content})}\n\n"
+
+    yield "event: done\ndata: {}\n\n"

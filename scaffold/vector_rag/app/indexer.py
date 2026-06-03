@@ -15,14 +15,6 @@ INDEX_DIR = Path(__file__).resolve().parents[3] / ".kb" / "faiss_index"
 EMBEDDING_MODEL = "text-embedding-3-small"
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
-# TODO: Configure chunking parameters for traditional RAG.
-#
-# Design decision: Balance semantic recall against context noise.
-#
-# Hints:
-# 1. chunk_size around 500 chars is a reasonable prototype default.
-# 2. chunk_overlap helps avoid cutting facts at boundaries.
-# 3. separators should prefer Markdown structure before individual words.
 splitter = RecursiveCharacterTextSplitter(
     chunk_size=500,
     chunk_overlap=0,
@@ -54,56 +46,74 @@ def get_embeddings():
 
 
 def load_markdown_sections(path: Path) -> list[Document]:
-    # TODO: Load Markdown into source-citable Document records.
-    #
-    # Design decision: Preserve filename#heading metadata before chunking.
-    #
-    # Hints:
-    # 1. Use HEADING_RE to split by Markdown headings.
-    # 2. Put heading_path and content into page_content.
-    # 3. Store source metadata like "refund_policy.md#refund-timeline".
-    return []
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    sections: list[Document] = []
+    current_heading = ""
+    current_slug = ""
+    current_lines: list[str] = []
+
+    def flush():
+        content = "".join(current_lines).strip()
+        if content:
+            source = f"{path.name}#{current_slug}" if current_slug else path.name
+            sections.append(Document(page_content=f"{current_heading}\n\n{content}" if current_heading else content, metadata={"source": source}))
+
+    for line in lines:
+        m = HEADING_RE.match(line.rstrip())
+        if m:
+            flush()
+            current_heading = line.rstrip()
+            current_slug = slugify(m.group(2))
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    flush()
+    return sections
 
 
 def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
     global vectorstore, files_indexed, sections_indexed
 
-    # TODO: Build a FAISS vector index from docs/*.md.
-    #
-    # Hints:
-    # 1. Load all Markdown files from docs_dir.
-    # 2. Convert each heading section to a Document.
-    # 3. Split documents into chunks with splitter.split_documents().
-    # 4. Create FAISS.from_documents(chunks, get_embeddings()).
-    # 5. Save the FAISS index to .kb/faiss_index/.
-    # 6. Return (files_indexed, chunks_indexed).
-    vectorstore = None
-    files_indexed = 0
-    sections_indexed = 0
+    md_files = sorted(docs_dir.glob("*.md"))
+    all_sections: list[Document] = []
+    for md_file in md_files:
+        all_sections.extend(load_markdown_sections(md_file))
+
+    chunks = splitter.split_documents(all_sections)
+    vectorstore = FAISS.from_documents(chunks, get_embeddings())
+    files_indexed = len(md_files)
+    sections_indexed = len(chunks)
+    save_vector_index()
     return files_indexed, sections_indexed
 
 
 def save_vector_index(index_dir: Path = INDEX_DIR) -> None:
-    # TODO: Persist the FAISS index so restart does not require re-embedding.
-    #
-    # Hints:
-    # 1. Return early if vectorstore is None.
-    # 2. Clear stale persisted files with shutil.rmtree(...) if the new index is empty.
-    # 3. Use vectorstore.save_local(str(index_dir)).
-    # 4. Write metadata.json with embedding_model, files_indexed, and sections_indexed.
-    # 5. json.dumps(..., indent=2) makes the metadata easy to inspect.
-    pass
+    if vectorstore is None:
+        return
+    if index_dir.exists():
+        shutil.rmtree(index_dir)
+    index_dir.mkdir(parents=True, exist_ok=True)
+    vectorstore.save_local(str(index_dir))
+    metadata = {"embedding_model": EMBEDDING_MODEL, "files_indexed": files_indexed, "sections_indexed": sections_indexed}
+    (index_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
 
 def load_vector_index(index_dir: Path = INDEX_DIR) -> tuple[int, int]:
-    # TODO: Load .kb/faiss_index/ on server startup if it exists.
-    #
-    # Hints:
-    # 1. Check for index.faiss and index.pkl.
-    # 2. Read metadata.json and verify embedding_model still matches.
-    # 3. Use FAISS.load_local(..., allow_dangerous_deserialization=True).
-    # 4. Only use dangerous deserialization for indexes created by this local app.
-    return 0, 0
+    global vectorstore, files_indexed, sections_indexed
+    if not (index_dir / "index.faiss").exists() or not (index_dir / "index.pkl").exists():
+        return 0, 0
+    meta_path = index_dir / "metadata.json"
+    if not meta_path.exists():
+        return 0, 0
+    meta = json.loads(meta_path.read_text())
+    if meta.get("embedding_model") != EMBEDDING_MODEL:
+        return 0, 0
+    files_indexed = meta.get("files_indexed", 0)
+    sections_indexed = meta.get("sections_indexed", 0)
+    vectorstore = FAISS.load_local(str(index_dir), get_embeddings(), allow_dangerous_deserialization=True)
+    return files_indexed, sections_indexed
 
 
 def search(query: str, k: int = 3) -> list[tuple[Document, float]]:

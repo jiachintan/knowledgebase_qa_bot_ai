@@ -1,8 +1,8 @@
-from fastapi import APIRouter
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from .indexer import build_index
-from .retrieval import query
+from .retrieval import query, query_stream
 from .schemas import ChatRequest, ChatResponse, IndexResponse
 
 router = APIRouter()
@@ -24,4 +24,12 @@ def index_docs():
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    return query(req.query)
+    try:
+        return query(req.query)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Chat generation failed: {exc}") from exc
+
+
+@router.post("/chat/stream")
+def chat_stream(req: ChatRequest):
+    return StreamingResponse(query_stream(req.query), media_type="text/event-stream")

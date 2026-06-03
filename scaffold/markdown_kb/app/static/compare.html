@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KB Comparison — Markdown KB vs Vector RAG</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f4f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: #fff;
+      border-bottom: 1px solid #e4e4e7;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .topbar h1 { font-size: 1rem; font-weight: 600; flex: 1; }
+
+    .status-row { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: #555;
+    }
+
+    .dot-status {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #d4d4d8;
+    }
+
+    .dot-status.ok { background: #22c55e; }
+    .dot-status.err { background: #ef4444; }
+
+    .index-btn {
+      font-size: 0.78rem;
+      padding: 4px 10px;
+      border: 1px solid #d4d4d8;
+      border-radius: 6px;
+      background: #fafafa;
+      cursor: pointer;
+    }
+
+    .index-btn:hover { background: #f0f0f0; }
+    .index-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Main layout ── */
+    .panels {
+      display: flex;
+      flex: 1;
+      gap: 0;
+      min-height: 0;
+    }
+
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #e4e4e7;
+      min-width: 0;
+    }
+
+    .panel.mkb-panel { background: #fffde7; }
+    .panel.vrag-panel { background: #e3f2fd; }
+
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid #e4e4e7;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.5);
+    }
+
+    .panel-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .panel-title.mkb { color: #7c3aed; }
+    .panel-title.vrag { color: #0369a1; }
+
+    .panel-sub {
+      font-size: 0.72rem;
+      color: #888;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 300px;
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border-bottom-right-radius: 2px;
+      font-size: 0.85rem;
+      max-width: 85%;
+    }
+
+    .sources-block { display: flex; flex-wrap: wrap; gap: 4px; }
+
+    .source-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #15803d;
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 0.7rem;
+      font-family: monospace;
+      cursor: default;
+    }
+
+    .panel-title.vrag ~ .messages .source-chip {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+
+    .vrag-chip {
+      background: #eff6ff !important;
+      border-color: #bfdbfe !important;
+      color: #1d4ed8 !important;
+    }
+
+    .score-tag {
+      font-size: 0.65rem;
+      opacity: 0.7;
+    }
+
+    .msg-assistant {
+      align-self: flex-start;
+      background: rgba(255,255,255,0.75);
+      border: 1px solid rgba(0,0,0,0.1);
+      padding: 10px 12px;
+      border-radius: 8px;
+      border-bottom-left-radius: 2px;
+      font-size: 0.85rem;
+      line-height: 1.65;
+      max-width: 95%;
+      white-space: pre-wrap;
+    }
+
+    .typing {
+      display: flex;
+      gap: 4px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.75);
+      border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 8px;
+      border-bottom-left-radius: 2px;
+      align-self: flex-start;
+    }
+
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #aaa;
+      animation: bounce 1.2s infinite;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-5px); }
+    }
+
+    /* ── Suggested questions ── */
+    .suggestions {
+      border-top: 1px solid #e4e4e7;
+      padding: 8px 16px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .suggestions-label {
+      font-size: 0.72rem;
+      color: #999;
+      white-space: nowrap;
+    }
+
+    .suggestion-pill {
+      font-size: 0.78rem;
+      padding: 4px 10px;
+      border: 1px dashed #c4b5fd;
+      border-radius: 20px;
+      background: #faf5ff;
+      color: #6d28d9;
+      cursor: grab;
+      user-select: none;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+
+    .suggestion-pill:hover { background: #ede9fe; }
+    .suggestion-pill:active { cursor: grabbing; }
+    .suggestion-pill.dragging { opacity: 0.4; }
+
+    /* ── Input bar ── */
+    .input-bar {
+      border-top: 1px solid #e4e4e7;
+      padding: 12px 16px;
+      display: flex;
+      gap: 8px;
+      background: #fff;
+    }
+
+    #query-input.drag-over {
+      border-color: #7c3aed;
+      background: #faf5ff;
+    }
+
+    #query-input {
+      flex: 1;
+      padding: 9px 13px;
+      border: 1px solid #d4d4d8;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #query-input:focus { border-color: #7c3aed; }
+
+    #send-btn {
+      padding: 9px 18px;
+      background: #1a1a1a;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+
+    #send-btn:hover { background: #333; }
+    #send-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+    .sources-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #aaa;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <h1>Markdown KB vs Vector RAG — Side-by-Side Comparison</h1>
+  <div class="status-row">
+    <div class="status-badge">
+      <div class="dot-status" id="mkb-dot"></div>
+      <span>Markdown KB :8000</span>
+      <button class="index-btn" onclick="buildIndex('mkb')">Index</button>
+      <span id="mkb-index-status" style="font-size:0.72rem;color:#888"></span>
+    </div>
+    <div class="status-badge">
+      <div class="dot-status" id="vrag-dot"></div>
+      <span>Vector RAG :8001</span>
+      <button class="index-btn" onclick="buildIndex('vrag')">Index</button>
+      <span id="vrag-index-status" style="font-size:0.72rem;color:#888"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Panels -->
+<div class="panels">
+  <div class="panel mkb-panel">
+    <div class="panel-header">
+      <span class="panel-title mkb">Markdown KB</span>
+      <span class="panel-sub">BM25 keyword search</span>
+    </div>
+    <div class="messages" id="mkb-messages"></div>
+  </div>
+  <div class="panel vrag-panel">
+    <div class="panel-header">
+      <span class="panel-title vrag">Vector RAG</span>
+      <span class="panel-sub">Embeddings + FAISS</span>
+    </div>
+    <div class="messages" id="vrag-messages"></div>
+  </div>
+</div>
+
+<!-- Suggested questions -->
+<div class="suggestions">
+  <span class="suggestions-label">Try:</span>
+  <span class="suggestion-pill" draggable="true">How long do refunds take?</span>
+  <span class="suggestion-pill" draggable="true">Can I change my email address?</span>
+  <span class="suggestion-pill" draggable="true">Which restaurants are nearby?</span>
+  <span class="suggestion-pill" draggable="true">How long to get money back?</span>
+</div>
+
+<!-- Input bar -->
+<div class="input-bar">
+  <input id="query-input" type="text" placeholder="Type a question or drag a suggestion here — sent to both simultaneously…" onkeydown="if(event.key==='Enter') sendQuery()" />
+  <button id="send-btn" onclick="sendQuery()">Ask Both</button>
+</div>
+
+<script>
+  const ENDPOINTS = {
+    mkb:  { base: 'http://localhost:8000', chipClass: '' },
+    vrag: { base: 'http://localhost:8001', chipClass: 'vrag-chip' },
+  };
+
+  // ── Health check on load ──
+  async function checkHealth(key) {
+    const dot = document.getElementById(`${key}-dot`);
+    try {
+      const res = await fetch(`${ENDPOINTS[key].base}/health`);
+      dot.className = res.ok ? 'dot-status ok' : 'dot-status err';
+    } catch {
+      dot.className = 'dot-status err';
+    }
+  }
+
+  checkHealth('mkb');
+  checkHealth('vrag');
+
+  // ── Drag-and-drop suggested questions ──
+  const queryInput = document.getElementById('query-input');
+
+  document.querySelectorAll('.suggestion-pill').forEach(pill => {
+    pill.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', pill.textContent.trim());
+      pill.classList.add('dragging');
+    });
+    pill.addEventListener('dragend', () => pill.classList.remove('dragging'));
+    pill.addEventListener('click', () => {
+      queryInput.value = pill.textContent.trim();
+      queryInput.focus();
+    });
+  });
+
+  queryInput.addEventListener('dragover', e => {
+    e.preventDefault();
+    queryInput.classList.add('drag-over');
+  });
+  queryInput.addEventListener('dragleave', () => queryInput.classList.remove('drag-over'));
+  queryInput.addEventListener('drop', e => {
+    e.preventDefault();
+    queryInput.classList.remove('drag-over');
+    queryInput.value = e.dataTransfer.getData('text/plain');
+    queryInput.focus();
+  });
+
+  // ── Index ──
+  async function buildIndex(key) {
+    const statusEl = document.getElementById(`${key}-index-status`);
+    statusEl.textContent = 'Indexing…';
+    try {
+      const res = await fetch(`${ENDPOINTS[key].base}/index`, { method: 'POST' });
+      const data = await res.json();
+      statusEl.textContent = `${data.files_indexed} files, ${data.sections_indexed} sections`;
+      checkHealth(key);
+    } catch {
+      statusEl.textContent = 'Failed';
+    }
+  }
+
+  // ── Helpers ──
+  function getPanel(key) { return document.getElementById(`${key}-messages`); }
+
+  function appendUser(key, text) {
+    const el = document.createElement('div');
+    el.className = 'msg-user';
+    el.textContent = text;
+    getPanel(key).appendChild(el);
+    scroll(key);
+  }
+
+  function appendSources(key, sources) {
+    if (!sources || sources.length === 0) return;
+    const wrap = document.createElement('div');
+    const label = document.createElement('div');
+    label.className = 'sources-label';
+    label.textContent = 'Sources';
+    wrap.appendChild(label);
+    const chips = document.createElement('div');
+    chips.className = 'sources-block';
+    sources.forEach(s => {
+      const chip = document.createElement('span');
+      chip.className = `source-chip ${ENDPOINTS[key].chipClass}`;
+      chip.title = s.content;
+      chip.innerHTML = `${s.source} <span class="score-tag">${s.score}</span>`;
+      chips.appendChild(chip);
+    });
+    wrap.appendChild(chips);
+    getPanel(key).appendChild(wrap);
+    scroll(key);
+  }
+
+  function showTyping(key) {
+    const el = document.createElement('div');
+    el.className = 'typing';
+    el.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+    getPanel(key).appendChild(el);
+    scroll(key);
+    return el;
+  }
+
+  function scroll(key) {
+    const p = getPanel(key);
+    p.scrollTop = p.scrollHeight;
+  }
+
+  // ── Stream one panel ──
+  async function streamPanel(key, question) {
+    const typing = showTyping(key);
+    try {
+      const res = await fetch(`${ENDPOINTS[key].base}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: question }),
+      });
+      typing.remove();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let bubble = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          const eventLine = lines.find(l => l.startsWith('event:'));
+          const dataLine  = lines.find(l => l.startsWith('data:'));
+          if (!eventLine || !dataLine) continue;
+          const event = eventLine.slice(6).trim();
+          const data  = JSON.parse(dataLine.slice(5).trim());
+
+          if (event === 'sources') {
+            appendSources(key, data);
+            bubble = document.createElement('div');
+            bubble.className = 'msg-assistant';
+            getPanel(key).appendChild(bubble);
+          } else if (event === 'token' && bubble) {
+            bubble.textContent += data.text;
+            scroll(key);
+          } else if (event === 'error') {
+            const el = document.createElement('div');
+            el.className = 'msg-assistant';
+            el.textContent = data.message;
+            getPanel(key).appendChild(el);
+          }
+        }
+      }
+    } catch {
+      typing.remove();
+      const el = document.createElement('div');
+      el.className = 'msg-assistant';
+      el.textContent = `Could not reach ${key === 'mkb' ? 'Markdown KB (:8000)' : 'Vector RAG (:8001)'}.`;
+      getPanel(key).appendChild(el);
+    }
+  }
+
+  // ── Send to both ──
+  async function sendQuery() {
+    const question = document.getElementById('query-input').value.trim();
+    if (!question) return;
+    document.getElementById('query-input').value = '';
+    document.getElementById('send-btn').disabled = true;
+
+    appendUser('mkb', question);
+    appendUser('vrag', question);
+
+    await Promise.all([streamPanel('mkb', question), streamPanel('vrag', question)]);
+
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('query-input').focus();
+  }
+</script>
+</body>
+</html>

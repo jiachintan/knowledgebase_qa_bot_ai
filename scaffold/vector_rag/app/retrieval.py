@@ -1,4 +1,6 @@
+import json
 import os
+from typing import Generator
 
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -6,17 +8,12 @@ from langchain_openai import ChatOpenAI
 from . import indexer
 
 
-SYSTEM_PROMPT = """
-# TODO: Write the system prompt for the knowledge base Q&A assistant.
-#
-# Design decision: Hallucination defense for retrieved chunks.
-#
-# Hints:
-# 1. Only answer using the provided CONTEXT.
-# 2. Cite sources using filename#heading.
-# 3. Define fallback behavior when the context lacks the answer.
-# 4. Explicitly prohibit guessing or outside knowledge.
-"""
+SYSTEM_PROMPT = """You are a knowledge base assistant. Answer questions using ONLY the provided CONTEXT.
+
+Rules:
+- Cite every fact using [Source: filename#heading] immediately after the statement.
+- If the context does not contain the answer, respond with: "I cannot confirm this from the knowledge base."
+- Do not use outside knowledge or guess. If you are unsure, say so."""
 
 _llm = None
 
@@ -33,16 +30,12 @@ def get_llm():
 
 
 def build_prompt(query: str, ranked_chunks: list) -> str:
-    # TODO: Build the prompt from retrieved vector chunks.
-    #
-    # Design decision: Give the LLM enough context without flooding it.
-    #
-    # Hints:
-    # 1. Include [Source: filename#heading] before each chunk.
-    # 2. Include retrieval distance or score only for debugging.
-    # 3. Use top-k chunks passed into this function.
-    # 4. Place CONTEXT before QUESTION.
-    return f"CONTEXT:\n(no context)\n\nQUESTION:\n{query}"
+    context_parts = []
+    for doc, score in ranked_chunks:
+        source = doc.metadata.get("source", "unknown")
+        context_parts.append(f"[Source: {source}]\n{doc.page_content}")
+    context = "\n\n---\n\n".join(context_parts)
+    return f"CONTEXT:\n{context}\n\nQUESTION:\n{query}"
 
 
 def query(question: str) -> dict:
@@ -78,3 +71,34 @@ def query(question: str) -> dict:
         "answer": response.content,
         "sources": sources,
     }
+
+
+def query_stream(question: str) -> Generator[str, None, None]:
+    if indexer.vectorstore is None:
+        yield f"event: error\ndata: {json.dumps({'message': 'Not indexed yet. Call POST /index first.'})}\n\n"
+        return
+
+    ranked_chunks = indexer.search(question, k=3)
+    if not ranked_chunks:
+        yield f"event: sources\ndata: {json.dumps([])}\n\n"
+        yield f"event: token\ndata: {json.dumps({'text': 'I cannot confirm from the knowledge base.'})}\n\n"
+        yield "event: done\ndata: {}\n\n"
+        return
+
+    sources = [
+        {
+            "source": doc.metadata.get("source", "unknown"),
+            "heading": doc.metadata.get("heading", "unknown"),
+            "score": round(float(score), 3),
+            "content": doc.page_content[:240],
+        }
+        for doc, score in ranked_chunks
+    ]
+    yield f"event: sources\ndata: {json.dumps(sources)}\n\n"
+
+    prompt = build_prompt(question, ranked_chunks)
+    for chunk in get_llm().stream([SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]):
+        if chunk.content:
+            yield f"event: token\ndata: {json.dumps({'text': chunk.content})}\n\n"
+
+    yield "event: done\ndata: {}\n\n"
