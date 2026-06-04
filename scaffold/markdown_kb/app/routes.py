@@ -9,8 +9,8 @@ from .schemas import ChatRequest, ChatResponse, IndexResponse
 
 router = APIRouter()
 
-_UI_HTML = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
-_COMPARE_HTML = (Path(__file__).parent / "static" / "compare.html").read_text(encoding="utf-8")
+_UI_HTML = (Path(__file__).parents[2] / "common" / "static" / "index.html").read_text(encoding="utf-8")
+_COMPARE_HTML = (Path(__file__).parents[2] / "common" / "static" / "compare.html").read_text(encoding="utf-8")
 
 
 @router.get("/", response_class=HTMLResponse)

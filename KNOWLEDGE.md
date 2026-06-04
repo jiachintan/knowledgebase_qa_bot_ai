@@ -194,6 +194,35 @@ At ~5,000 sections, in-memory BM25 slows noticeably. At 100,000 files, you need 
 
 ---
 
+## Scoring Direction
+
+A common point of confusion when comparing the two strategies is that their scores mean opposite things:
+
+| Strategy | Score type | Best result | Intuition |
+|----------|------------|-------------|-----------|
+| **Markdown KB** | BM25 relevance score | **Highest** wins | More keyword overlap → higher score |
+| **Vector RAG** | L2 distance (Euclidean) | **Lowest** wins | Smaller distance → vectors are closer → more similar |
+
+**Example for the query "How long do refunds take?":**
+
+```
+Markdown KB results:
+  refund_policy.md#refund-timeline  → score: 4.21  ✅ best (highest)
+  account_help.md#change-email      → score: 0.83
+
+Vector RAG results:
+  refund_policy.md#refund-timeline  → score: 0.18  ✅ best (lowest = nearest)
+  account_help.md#change-email      → score: 0.91
+```
+
+This is why the Vector RAG prompt does **not** include the L2 score in the LLM context — telling the model "score: 0.18" looks low but actually means high confidence, which is confusing. The BM25 score is included in the Markdown KB prompt because "score: 4.21" intuitively reads as a strong match.
+
+When adding a score threshold to reject weak results:
+- **Markdown KB**: reject if top BM25 score **< threshold** (e.g. < 1.5)
+- **Vector RAG**: reject if top L2 distance **> threshold** (e.g. > 0.8)
+
+---
+
 ## Summary Table
 
 | Dimension | Markdown KB | Vector RAG |
